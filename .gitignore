@@ -1,0 +1,25 @@
+# Build directories
+build/
+.vscode/
+*.o
+*.a
+
+# IDE
+.idea/
+*.swp
+*.swo
+*~
+
+# Artifacts
+*.d
+*.elf
+*.map
+
+# ESP-IDF
+sdkconfig.old
+CMakeCache.txt
+CMakeFiles/
+
+# OS
+.DS_Store
+Thumbs.db
