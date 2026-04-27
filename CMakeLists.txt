@@ -13,5 +13,5 @@ idf_component_register(
          "main/display_manager.cpp"
          "main/oui_database.cpp"
     INCLUDE_DIRS "main"
-    REQUIRES esp_wifi driver esp_timer freertos esp_heap_caps nvs_flash
+    REQUIRES esp_wifi driver esp_timer freertos esp_heap_caps nvs_flash esp_log
 )
