@@ -37,25 +37,17 @@ void WiFiSniffer::setChannel(uint8_t channel) {
 
 void WiFiSniffer::promiscuousRxCallback(void* buf, wifi_promiscuous_pkt_type_t type) {
     wifi_promiscuous_pkt_t* pkt = (wifi_promiscuous_pkt_t*) buf;
+    
+    // Tạo struct tĩnh trên Stack của ISR, không dùng ps_malloc
+    SnifferPacket_t sniffer_pkt; 
+    
     uint8_t* payload = pkt->payload;
-    
-    // Dùng biến static để tránh malloc trong ISR (Cực kỳ quan trọng!)
-    static SnifferPacket_t packet_data; 
-    
-    // Xác định vị trí MAC tùy theo loại gói tin
-    // Thường MAC nguồn nằm ở offset 10 cho Data và offset 10 cho Management
-    uint8_t* mac_ptr = payload + 10; 
+    uint8_t* mac_ptr = payload + 10; // Offset chuẩn cho Management frames
 
-    // Copy dữ liệu vào struct tạm
-    memcpy(packet_data.mac, mac_ptr, 6);
-    packet_data.rssi = pkt->rx_ctrl.rssi;
-    packet_data.channel = pkt->rx_ctrl.channel;
+    memcpy(sniffer_pkt.mac, mac_ptr, 6);
+    sniffer_pkt.rssi = pkt->rx_ctrl.rssi;
+    sniffer_pkt.channel = pkt->rx_ctrl.channel;
 
-    // Đẩy vào Queue (Dùng bản FromISR để không làm treo hệ thống)
-    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-    if (xQueueSendFromISR(sniffer_queue, &packet_data, &xHigherPriorityTaskWoken) == pdTRUE) {
-        if (xHigherPriorityTaskWoken) {
-            portYIELD_FROM_ISR();
-        }
-    }
+    // Đẩy TRỰC TIẾP struct vào queue (không đẩy con trỏ)
+    xQueueSendFromISR(sniffer_queue, &sniffer_pkt, NULL);
 }
