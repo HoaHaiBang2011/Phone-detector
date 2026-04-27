@@ -1,88 +1,102 @@
 #include "display_manager.h"
 
 TFT_eSPI DisplayManager::tft = TFT_eSPI();
+TFT_Sprite DisplayManager::img = TFT_Sprite(&tft);
 
 void DisplayManager::init() {
     tft.init();
-    tft.setRotation(0); // Chỉnh lại theo hướng lắp board của bồ
+    tft.setRotation(0);
     tft.fillScreen(TFT_BLACK);
-    tft.setTextColor(TFT_WHITE, TFT_BLACK);
+    
+    // Khởi tạo Sprite 240x240. 
+    // ESP32-S3 có PSRAM nên chúng ta tận dụng để không tốn RAM nội bộ.
+    if (img.createSprite(240, 240) == nullptr) {
+        // Nếu không đủ RAM thường, nó sẽ tự tìm trong PSRAM nếu sdkconfig đã bật
+        Serial.println("Sprite created!"); 
+    }
 }
 
 void DisplayManager::showSplash() {
-    tft.fillScreen(TFT_BLACK);
-    tft.drawRoundRect(10, 10, 220, 220, 10, COL_MAIN);
-    tft.setTextDatum(MC_DATUM); // Căn giữa
-    tft.drawString("WIFI SNIFFER v1.0", 120, 100, 4);
-    tft.drawString("By Gemini & Bồ", 120, 140, 2);
+    img.fillSprite(TFT_BLACK); // Xóa sạch khung hình
+    img.drawRoundRect(10, 10, 220, 220, 10, COL_MAIN);
+    img.setTextDatum(MC_DATUM);
+    img.setTextColor(TFT_WHITE);
+    img.drawString("WIFI SNIFFER v1.1", 120, 100, 4);
+    img.drawString("Double Buffering Enabled", 120, 140, 2);
+    img.pushSprite(0, 0); // Đẩy khung hình ra màn hình
     delay(2000);
 }
 
 void DisplayManager::drawDeviceList(WiFiDevice_t* devices, uint16_t count, uint16_t selected_idx) {
-    // Vẽ tiêu đề
-    tft.fillRect(0, 0, 240, 30, COL_MAIN);
-    tft.setTextColor(TFT_BLACK);
-    tft.drawString("DANH SACH THIET BI", 120, 15, 2);
+    img.fillSprite(TFT_BLACK); // XÓA SẠCH TRƯỚC KHI VẼ
+    
+    // Vẽ tiêu đề cố định
+    img.fillRect(0, 0, 240, 30, COL_MAIN);
+    img.setTextColor(TFT_BLACK);
+    img.setTextDatum(MC_DATUM);
+    img.drawString("SCANNING... (" + String(count) + ")", 120, 15, 2);
     
     if (count == 0) {
-        tft.setTextColor(TFT_WHITE);
-        tft.drawString("Dang quet sóng...", 120, 120, 2);
-        return;
-    }
-
-    // Chỉ vẽ 8 thiết bị mỗi lần để tránh tràn màn hình
-    int start = (selected_idx / 8) * 8;
-    for (int i = 0; i < 8; i++) {
-        int idx = start + i;
-        int y = 40 + (i * 24);
-        
-        if (idx < count) {
+        img.setTextColor(TFT_WHITE);
+        img.drawString("No devices found", 120, 120, 2);
+    } else {
+        img.setTextDatum(TL_DATUM); // Căn lề trái
+        for (int i = 0; i < 8; i++) { // Hiển thị tối đa 8 dòng
+            int idx = i; 
+            if (idx >= count) break;
+            
+            int y = 40 + (i * 25);
+            
             // Highlight dòng đang chọn
-            if (idx == selected_idx) tft.fillRect(0, y-2, 240, 22, 0x3186); // Xanh xám
-            else tft.fillRect(0, y-2, 240, 22, TFT_BLACK);
-
-            tft.setTextColor(TFT_WHITE);
-            // Hiện: MAC cuối - Tên NSX - RSSI
-            char buf[32];
-            snprintf(buf, sizeof(buf), "[%02X:%02X] %-10s %ddB", 
+            if (idx == selected_idx) {
+                img.fillRect(5, y - 2, 230, 22, COL_MAIN);
+                img.setTextColor(TFT_BLACK);
+            } else {
+                img.setTextColor(TFT_WHITE);
+            }
+            
+            char buf[40];
+            snprintf(buf, sizeof(buf), "[%02X:%02X] %-12s %ddB", 
                      devices[idx].mac[4], devices[idx].mac[5], 
-                     devices[idx].oui_name, devices[idx].rssi_sum);
-            tft.drawString(buf, 10, y, 2);
+                     devices[idx].oui_name, devices[idx].rssi);
+            img.drawString(buf, 10, y, 2);
         }
     }
+    img.pushSprite(0, 0); // Đẩy toàn bộ nội dung lên màn hình một lần duy nhất
 }
 
 void DisplayManager::drawTracker(WiFiDevice_t* device) {
     if (!device) return;
 
-    tft.fillScreen(TFT_BLACK);
-    tft.setTextColor(COL_MAIN);
-    tft.setTextDatum(TC_DATUM);
-    tft.drawString("dang theo dau:", 120, 20, 2);
+    img.fillSprite(TFT_BLACK); // XÓA SẠCH
     
-    // Hiện MAC to rõ
+    img.setTextColor(COL_MAIN);
+    img.setTextDatum(TC_DATUM);
+    img.drawString("TARGET TRACKING", 120, 20, 2);
+    
+    // Thông tin thiết bị
     char macStr[20];
     snprintf(macStr, sizeof(macStr), "%02X:%02X:%02X:%02X:%02X:%02X",
              device->mac[0], device->mac[1], device->mac[2],
              device->mac[3], device->mac[4], device->mac[5]);
-    tft.setTextColor(TFT_WHITE);
-    tft.drawString(macStr, 120, 50, 2);
+    
+    img.setTextColor(TFT_WHITE);
+    img.drawString(device->oui_name, 120, 45, 4);
+    img.drawString(macStr, 120, 75, 2);
 
-    // Vẽ thanh RSSI Bar 240x240
-    int barWidth = map(device->rssi_sum, RSSI_FAR, RSSI_NEAR, 0, 200);
+    // Vẽ thanh Bar năng động
+    int barWidth = map(device->rssi, -100, -30, 0, 200);
     barWidth = constrain(barWidth, 0, 200);
     
-    tft.drawRect(20, 100, 204, 40, TFT_WHITE); // Khung ngoài
+    // Khung thanh Bar
+    img.drawRect(20, 120, 204, 30, TFT_WHITE);
+    // Màu sắc thanh Bar đổi theo độ mạnh yếu
+    uint16_t barColor = (barWidth > 150) ? TFT_GREEN : (barWidth > 80 ? TFT_YELLOW : TFT_RED);
+    img.fillRect(22, 122, barWidth, 26, barColor);
     
-    uint16_t color = TFT_GREEN;
-    if (device->rssi_sum < -75) color = TFT_RED;
-    else if (device->rssi_sum < -60) color = TFT_YELLOW;
-
-    tft.fillRect(22, 102, barWidth, 36, color);
-    tft.fillRect(22 + barWidth, 102, 200 - barWidth, 36, TFT_BLACK); // Xóa phần dư
-
-    // Hiện số dBm to ở giữa
-    tft.setTextColor(TFT_WHITE);
-    tft.drawNumber(device->rssi_sum, 120, 160, 6);
-    tft.drawString("dBm", 180, 185, 2);
+    // Chỉ số RSSI
+    img.setTextDatum(MC_DATUM);
+    img.drawString(String(device->rssi) + " dBm", 120, 170, 4);
+    
+    img.pushSprite(0, 0); // Render!
 }
