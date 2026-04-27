@@ -28,30 +28,21 @@ uint8_t scroll_offset = 0;
 uint32_t last_button_press[3] = {0, 0, 0};
 
 void snifferTask(void* pvParameters) {
-    SnifferPacket_t* pkt = NULL; // Đây là con trỏ để nhận địa chỉ từ Queue
-    ESP_LOGI(TAG, "Sniffer task started");
+    SnifferPacket_t pkt; // Biến cục bộ để chứa dữ liệu từ Queue
     
     while (1) {
-        // Nhận địa chỉ vùng nhớ được gửi từ WiFiSniffer
+        // Nhận trực tiếp dữ liệu (không phải con trỏ)
         if (xQueueReceive(sniffer_queue, &pkt, portMAX_DELAY) == pdTRUE) {
-            if (pkt == NULL) continue;
-            
-            switch (system_mode) {
-                case MODE_DISCOVERY:
-                    DeviceTracker::addDevice(pkt->mac, pkt->rssi, pkt->channel);
-                    break;
-                    
-                case MODE_TARGET_TRACKING:
-                    if (selected_device && memcmp(pkt->mac, selected_device->mac, 6) == 0) {
-                        SignalProcessor::updateRSSI(selected_device, pkt->rssi);
-                        // Cập nhật âm thanh dựa trên RSSI trung bình đã qua xử lý
-                        BuzzerController::play(SignalProcessor::getAverageRSSI(selected_device));
-                    }
-                    break;
+            if (system_mode == MODE_DISCOVERY) {
+                DeviceTracker::addDevice(pkt.mac, pkt.rssi, pkt.channel);
+            } 
+            else if (system_mode == MODE_TARGET_TRACKING) {
+                if (selected_device && memcmp(pkt.mac, selected_device->mac, 6) == 0) {
+                    SignalProcessor::updateRSSI(selected_device, pkt.rssi);
+                    BuzzerController::play(selected_device->rssi);
+                }
             }
-            
-            // Giải phóng đúng vùng nhớ đã malloc bên wifi_sniffer.cpp
-            free(pkt); 
+            // Không cần free(pkt) nữa -> Cực kỳ an toàn!
         }
     }
 }
