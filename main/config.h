@@ -1,24 +1,23 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
-#include <stdint.h>
+#include <Arduino.h> // Thay stdint bằng Arduino để dùng được các kiểu dữ liệu board
 
 /* ===== MEMORY CONFIGURATION ===== */
 #define PSRAM_ENABLED 1
-#define MAX_DEVICES 200
-#define DEVICE_BUFFER_SIZE (MAX_DEVICES * sizeof(WiFiDevice_t))
+#define MAX_DEVICES 200 // Với 8MB PSRAM, bồ có thể tăng lên 1000 nếu muốn
 
-/* ===== DEVICE STRUCT - Tiết kiệm bộ nhớ ===== */
+/* ===== DEVICE STRUCT - Tối ưu cho PSRAM ===== */
 typedef struct {
-    uint8_t mac[6];              // MAC Address (6 bytes)
-    int8_t rssi;                 // RSSI dBm
-    uint8_t channel;             // Wi-Fi Channel (1-13)
-    uint32_t last_seen;          // Timestamp ms
-    char oui_name[16];           // OUI Manufacturer (16 bytes max)
-    char temp_name[32];          // Temporary Device Name (Apple 1, Samsung 2...)
-    uint8_t frame_count;         // Số frame phát hiện
-    int8_t rssi_history[32];     // Moving Average Buffer (32 samples)
-    uint8_t rssi_idx;            // Index trong RSSI history
+    uint8_t mac[6];              // MAC Address
+    int8_t rssi;                 // RSSI hiện tại
+    uint8_t channel;             // Kênh bắt được
+    uint32_t last_seen;          // Thời điểm cuối nhìn thấy (ms)
+    char oui_name[16];           // Tên NSX (Apple, Samsung...)
+    bool is_private;             // Đánh dấu nếu là MAC ảo
+    int16_t rssi_sum;            // Dùng để tính trung bình trượt nhanh hơn
+    int8_t rssi_history[16];     // Giảm xuống 16 mẫu để phản hồi nhanh hơn
+    uint8_t rssi_idx;
 } WiFiDevice_t;
 
 /* ===== STATE MACHINE ===== */
@@ -27,39 +26,34 @@ typedef enum {
     MODE_TARGET_TRACKING = 1
 } SystemMode_t;
 
-/* ===== DISPLAY CONFIG ===== */
+/* ===== DISPLAY CONFIG (ST7789 240x240) ===== */
 #define TFT_WIDTH 240
-#define TFT_HEIGHT 135
+#define TFT_HEIGHT 240  // Đã sửa từ 135 thành 240
 #define TFT_SCL_PIN 20
 #define TFT_SDA_PIN 21
 #define TFT_RST_PIN 47
 #define TFT_DC_PIN 18
 #define TFT_CS_PIN 45
 
-/* ===== BUTTON CONFIG ===== */
+/* ===== BUTTON CONFIG (Giữ nguyên Pin đã test) ===== */
 #define BTN_UP_PIN 40
 #define BTN_DOWN_PIN 42
 #define BTN_SELECT_PIN 41
-#define BTN_DEBOUNCE_MS 50
+#define BTN_DEBOUNCE_MS 50 // Thời gian chờ ổn định nút nhấn (ms)
 
-/* ===== BUZZER CONFIG ===== */
+/* ===== BUZZER CONFIG (Dùng LEDC PWM) ===== */
 #define BUZZER_PIN 10
 #define BUZZER_CHANNEL 0
-#define BUZZER_FREQ 1000
-#define BUZZER_RESOLUTION 8
+#define BUZZER_FREQ 2000     // Tần số 2kHz nghe thanh và rõ hơn
+#define BUZZER_RESOLUTION 8  // 8-bit (0-255) dùng để chỉnh âm lượng (Duty Cycle)
 
 /* ===== RSSI RANGE ===== */
-#define RSSI_NEAR (-30)          // Rất gần
-#define RSSI_FAR (-90)           // Rất xa
-#define RSSI_SAMPLES 32          // Moving Average samples
-
-/* ===== QUEUE CONFIG ===== */
-#define SNIFFER_QUEUE_SIZE 64
-#define SNIFFER_TASK_STACK 4096
-#define SNIFFER_TASK_PRIORITY 15
+#define RSSI_NEAR (-30)      // Vạch Max
+#define RSSI_FAR (-90)       // Vạch Min
+#define RSSI_SAMPLES 16      // Số mẫu lấy trung bình
 
 /* ===== WIFI SCAN ===== */
-#define WIFI_SCAN_INTERVAL_MS 100
 #define WIFI_CHANNEL_COUNT 13
+#define CHANNEL_HOP_INTERVAL 150 // Thời gian ở lại mỗi kênh (ms)
 
 #endif // CONFIG_H
