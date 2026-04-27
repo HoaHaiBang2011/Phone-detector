@@ -48,50 +48,23 @@ void snifferTask(void* pvParameters) {
 }
 
 void displayTask(void* pvParameters) {
-    TickType_t xLastWakeTime = xTaskGetTickCount();
-    
-    ESP_LOGI(TAG, "Display task started");
+    DisplayManager::showSplash();
     
     while (1) {
-        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(500));
+        uint16_t count = DeviceTracker::getDeviceCount();
+        WiFiDevice_t* devices = DeviceTracker::getDeviceList();
         
-        switch (system_mode) {
-            case MODE_DISCOVERY: {
-                uint16_t device_count = 0;
-                WiFiDevice_t** device_list = DeviceTracker::getDeviceList(&device_count);
-                
-                if (device_list && device_count > 0) {
-                    DisplayManager::clearDisplay();
-                    DisplayManager::drawTitle("Wi-Fi Discovery");
-                    DisplayManager::drawDeviceList(*device_list, device_count, scroll_offset);
-                    ESP_LOGD(TAG, "Discovery mode: %u devices found", device_count);
-                } else {
-                    DisplayManager::clearDisplay();
-                    DisplayManager::drawTitle("Scanning...");
-                }
-                break;
-            }
-            
-            case MODE_TARGET_TRACKING: {
-                if (selected_device) {
-                    DisplayManager::clearDisplay();
-                    DisplayManager::drawTitle(selected_device->temp_name);
-                    
-                    int8_t avg_rssi = SignalProcessor::getAverageRSSI(selected_device);
-                    uint8_t percentage = SignalProcessor::rssiToPercentage(avg_rssi);
-                    
-                    DisplayManager::drawRSSIBar(percentage, avg_rssi);
-                    DisplayManager::drawMACAddress(selected_device->mac);
-                    
-                    ESP_LOGD(TAG, "Tracking: %s - RSSI: %d dBm (%u%%)", 
-                            selected_device->temp_name, avg_rssi, percentage);
-                }
-                break;
-            }
+        if (system_mode == MODE_DISCOVERY) {
+            DisplayManager::drawDeviceList(devices, count, selected_idx);
+        } 
+        else if (system_mode == MODE_TARGET_TRACKING) {
+            DisplayManager::drawTracker(selected_device);
         }
+        
+        // 70ms tương đương ~14 FPS, cực kỳ mượt mà không tốn quá nhiều CPU
+        vTaskDelay(pdMS_TO_TICKS(70)); 
     }
 }
-
 void buttonTask(void* pvParameters) {
     gpio_config_t io_conf = {
         .pin_bit_mask = (1ULL << BTN_UP_PIN) | (1ULL << BTN_DOWN_PIN) | (1ULL << BTN_SELECT_PIN),
