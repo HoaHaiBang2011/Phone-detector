@@ -1,62 +1,56 @@
 #include "buzzer_controller.h"
-#include "driver/ledc.h"
-#include "signal_processor.h"
-#include "esp_log.h"
 
-static const char* TAG = "BuzzerController";
-
-uint16_t BuzzerController::current_freq = 1000;
-uint8_t BuzzerController::current_duty = 0;
+int8_t   BuzzerController::_target_rssi = -100;
+uint32_t BuzzerController::_last_beep_ms = 0;
+bool     BuzzerController::_is_beeping = false;
+bool     BuzzerController::_enabled = false;
 
 void BuzzerController::init() {
-    ledc_timer_config_t ledc_timer = {
-        .speed_mode = LEDC_LOW_SPEED_MODE,
-        .duty_resolution = (ledc_timer_bit_t)BUZZER_RESOLUTION,
-        .timer_num = LEDC_TIMER_0,
-        .freq_hz = BUZZER_FREQ,
-        .clk_cfg = LEDC_AUTO_CLK
-    };
-    ledc_timer_config(&ledc_timer);
-    
-    ledc_channel_config_t ledc_channel = {
-        .speed_mode = LEDC_LOW_SPEED_MODE,
-        .channel = (ledc_channel_t)BUZZER_CHANNEL,
-        .timer_sel = LEDC_TIMER_0,
-        .intr_type = LEDC_INTR_DISABLE,
-        .gpio_num = BUZZER_PIN,
-        .duty = 0,
-        .hpoint = 0
-    };
-    ledc_channel_config(&ledc_channel);
-    
-    ESP_LOGI(TAG, "Buzzer initialized on GPIO %d", BUZZER_PIN);
+    // Arduino ESP32 LEDC setup
+    ledcSetup(BUZZER_CHANNEL, BUZZER_FREQ, BUZZER_RESOLUTION);
+    ledcAttachPin(BUZZER_PIN, BUZZER_CHANNEL);
+    ledcWrite(BUZZER_CHANNEL, 0); // Tắt lúc đầu
+    _enabled = true;
 }
 
-void BuzzerController::play(int8_t rssi) {
-    uint16_t freq = SignalProcessor::rssiToBuzzerFreq(rssi);
-    uint8_t duty = SignalProcessor::rssiToDutyCycle(rssi);
+void BuzzerController::setTargetRSSI(int8_t rssi) {
+    _target_rssi = rssi;
+}
+
+void BuzzerController::update() {
+    if (!_enabled || _target_rssi <= RSSI_FAR) {
+        stop();
+        return;
+    }
+
+    uint32_t now = millis();
     
-    setFrequency(freq);
-    setDutyCycle(duty);
+    // Tính toán khoảng cách nghỉ giữa 2 tiếng bíp (ms)
+    // Sóng càng mạnh (-30), interval càng ngắn (50ms) -> bíp liên tục
+    // Sóng càng yếu (-90), interval càng dài (1000ms) -> bíp thưa
+    long interval = map(_target_rssi, RSSI_FAR, RSSI_NEAR, 1000, 50);
+    interval = constrain(interval, 50, 1000);
+
+    // Thời gian của một tiếng bíp là 40ms (ngắn và gọn)
+    uint16_t beep_duration = 40;
+
+    if (!_is_beeping && (now - _last_beep_ms >= (uint32_t)interval)) {
+        // Bắt đầu tiếng bíp
+        ledcWriteTone(BUZZER_CHANNEL, BUZZER_FREQ);
+        // Chỉnh độ sáng/âm lượng qua Duty Cycle (đã có trở hạn dòng nên để 50% là vừa)
+        ledcWrite(BUZZER_CHANNEL, 128); 
+        _last_beep_ms = now;
+        _is_beeping = true;
+    } 
+    else if (_is_beeping && (now - _last_beep_ms >= beep_duration)) {
+        // Kết thúc tiếng bíp
+        ledcWrite(BUZZER_CHANNEL, 0);
+        _is_beeping = false;
+    }
 }
 
 void BuzzerController::stop() {
-    ledc_set_duty(LEDC_LOW_SPEED_MODE, (ledc_channel_t)BUZZER_CHANNEL, 0);
-    ledc_update_duty(LEDC_LOW_SPEED_MODE, (ledc_channel_t)BUZZER_CHANNEL);
-    ESP_LOGD(TAG, "Buzzer stopped");
-}
-
-void BuzzerController::setFrequency(uint16_t freq) {
-    if (freq == current_freq) return;
-    current_freq = freq;
-    ledc_set_freq(LEDC_LOW_SPEED_MODE, LEDC_TIMER_0, freq);
-}
-
-void BuzzerController::setDutyCycle(uint8_t duty) {
-    if (duty == current_duty) return;
-    current_duty = duty;
-    
-    uint32_t duty_val = (duty * (1 << BUZZER_RESOLUTION)) / 100;
-    ledc_set_duty(LEDC_LOW_SPEED_MODE, (ledc_channel_t)BUZZER_CHANNEL, duty_val);
-    ledc_update_duty(LEDC_LOW_SPEED_MODE, (ledc_channel_t)BUZZER_CHANNEL);
+    ledcWrite(BUZZER_CHANNEL, 0);
+    _is_beeping = false;
+    _target_rssi = -100;
 }
