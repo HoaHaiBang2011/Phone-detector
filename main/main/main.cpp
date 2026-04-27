@@ -28,13 +28,13 @@ uint8_t scroll_offset = 0;
 uint32_t last_button_press[3] = {0, 0, 0};
 
 void snifferTask(void* pvParameters) {
-    SnifferPacket_t* pkt = NULL;
-    
+    SnifferPacket_t* pkt = NULL; // Đây là con trỏ để nhận địa chỉ từ Queue
     ESP_LOGI(TAG, "Sniffer task started");
     
     while (1) {
+        // Nhận địa chỉ vùng nhớ được gửi từ WiFiSniffer
         if (xQueueReceive(sniffer_queue, &pkt, portMAX_DELAY) == pdTRUE) {
-            if (!pkt) continue;
+            if (pkt == NULL) continue;
             
             switch (system_mode) {
                 case MODE_DISCOVERY:
@@ -42,16 +42,16 @@ void snifferTask(void* pvParameters) {
                     break;
                     
                 case MODE_TARGET_TRACKING:
-                    if (selected_device) {
-                        if (memcmp(pkt->mac, selected_device->mac, 6) == 0) {
-                            SignalProcessor::updateRSSI(selected_device, pkt->rssi);
-                            BuzzerController::play(pkt->rssi);
-                        }
+                    if (selected_device && memcmp(pkt->mac, selected_device->mac, 6) == 0) {
+                        SignalProcessor::updateRSSI(selected_device, pkt->rssi);
+                        // Cập nhật âm thanh dựa trên RSSI trung bình đã qua xử lý
+                        BuzzerController::play(SignalProcessor::getAverageRSSI(selected_device));
                     }
                     break;
             }
             
-            free(pkt);
+            // Giải phóng đúng vùng nhớ đã malloc bên wifi_sniffer.cpp
+            free(pkt); 
         }
     }
 }
@@ -186,26 +186,20 @@ void buttonTask(void* pvParameters) {
 }
 
 void channelScanTask(void* pvParameters) {
-    TickType_t xLastWakeTime = xTaskGetTickCount();
-    
-    ESP_LOGI(TAG, "Channel scan task started");
-    
     while (1) {
+        // Chỉ quét kênh khi đang ở chế độ Discovery
         if (system_mode == MODE_DISCOVERY) {
             WiFiSniffer::setChannel(current_channel);
+            current_channel = (current_channel % WIFI_CHANNEL_COUNT) + 1;
             
-            current_channel++;
-            if (current_channel > WIFI_CHANNEL_COUNT) {
-                current_channel = 1;
+            if (current_channel == 1) {
                 DeviceTracker::sortDevices();
-                ESP_LOGI(TAG, "Scan cycle completed, devices sorted by RSSI");
             }
         }
-        
-        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(WIFI_SCAN_INTERVAL_MS));
+        // Để 200-300ms để bắt được nhiều gói tin hơn trên mỗi kênh
+        vTaskDelay(pdMS_TO_TICKS(WIFI_SCAN_INTERVAL_MS)); 
     }
 }
-
 extern "C" void app_main(void) {
     ESP_LOGI(TAG, "╔════════════════════════════════════════╗");
     ESP_LOGI(TAG, "║   Phone Detector - WiFi Sniffer v1.0   ║");
